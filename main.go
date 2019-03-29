@@ -2,15 +2,19 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/graphql-go/graphql"
-	"github.com/graphql-go/handler"
 	"io/ioutil"
 	"math/rand"
 	"net/http"
+	"sync/atomic"
 	"time"
+
+	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/handler"
 )
 
 var r = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+var lastestPost atomic.Value
 
 // Start Return Types for User
 var userType = graphql.NewObject(graphql.ObjectConfig{
@@ -36,6 +40,7 @@ var accountType = graphql.NewObject(graphql.ObjectConfig{
 		},
 	},
 })
+
 // End User Type
 
 // Address Type
@@ -61,7 +66,8 @@ var queryType = graphql.NewObject(graphql.ObjectConfig{
 			Type:        graphql.NewNonNull(graphql.String),
 			Description: "Hello Desc",
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-				return "Hello World!", nil
+				ret := lastestPost.Load().(string)
+				return ret, nil
 			},
 		},
 		"random": &graphql.Field{
@@ -86,7 +92,8 @@ var queryType = graphql.NewObject(graphql.ObjectConfig{
 			},
 		},
 		"user": &graphql.Field{
-			Type: userType,
+			Type:        userType,
+			Description: "Gets a user",
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				// Read JSON, and spit out GraphQL
 				response, err := http.Get("http://localhost:4545/test")
@@ -105,7 +112,8 @@ var queryType = graphql.NewObject(graphql.ObjectConfig{
 			},
 		},
 		"address": &graphql.Field{
-			Type: addressType,
+			Type:        addressType,
+			Description: "Gets an address",
 			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 				// Read JSON, and spit out GraphQL
 				response, err := http.Get("http://localhost:4546/address")
@@ -126,11 +134,33 @@ var queryType = graphql.NewObject(graphql.ObjectConfig{
 	},
 })
 
+var mutationType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "Mutation",
+	Fields: graphql.Fields{
+		"lastestPost": &graphql.Field{
+			Type:        graphql.NewNonNull(graphql.String),
+			Description: "Hello Desc",
+			Args: graphql.FieldConfigArgument{
+				"newPost": &graphql.ArgumentConfig{
+					Type: graphql.NewNonNull(graphql.String),
+				},
+			},
+			Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				lastestPost.Store(p.Args["newPost"])
+				ret := lastestPost.Load().(string)
+				return ret, nil
+			},
+		},
+	},
+})
+
 var Schema, _ = graphql.NewSchema(graphql.SchemaConfig{
-	Query: queryType,
+	Query:    queryType,
+	Mutation: mutationType,
 })
 
 func main() {
+	lastestPost.Store("Hello World!")
 	h := handler.New(&handler.Config{
 		Schema:     &Schema,
 		Pretty:     true,
